@@ -170,7 +170,9 @@ risk_judge = risk_debate.get("judge_decision", "")
 final_decision = final_state.get("final_trade_decision", "")
 
 # ==================== 保存原始数据 ====================
-output_dir = Path(f"reports/{ticker}")
+# 固定使用脚本所在目录下的 reports/，避免在哪个目录运行就在哪生成
+script_dir = Path(__file__).resolve().parent
+output_dir = script_dir / f"reports/{ticker}"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 raw_data = {
