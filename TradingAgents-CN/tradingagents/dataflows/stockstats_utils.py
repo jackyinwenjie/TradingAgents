@@ -305,12 +305,12 @@ class StockstatsUtils:
             except FileNotFoundError:
                 raise Exception("Stockstats fail: Yahoo Finance data not fetched yet!")
         else:
-            # Get today's date as YYYY-mm-dd to add to cache
-            today_date = pd.Timestamp.today()
-            curr_date = pd.to_datetime(curr_date)
+            # Use curr_date (analysis date) as end_date to avoid future data leakage
+            # Critical: do NOT use pd.Timestamp.today() — that would leak future data in backtests
+            curr_date_dt = pd.to_datetime(curr_date)
 
-            end_date = today_date
-            start_date = today_date - pd.DateOffset(years=15)
+            end_date = curr_date_dt
+            start_date = curr_date_dt - pd.DateOffset(years=15)
             start_date = start_date.strftime("%Y-%m-%d")
             end_date = end_date.strftime("%Y-%m-%d")
 
@@ -374,11 +374,15 @@ class StockstatsUtils:
                 print(f"[stockstats] Saved {len(data)} rows to cache: {data_file}")
 
             df = wrap(data)
+            # Ensure Date column is datetime before formatting
+            if not pd.api.types.is_datetime64_any_dtype(df["Date"]):
+                df["Date"] = pd.to_datetime(df["Date"])
             df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
-            curr_date = curr_date.strftime("%Y-%m-%d")
+            # curr_date may already be a string (annotation says str), ensure string
+            curr_date_str = str(curr_date)[:10]
 
         df[indicator]  # trigger stockstats to calculate the indicator
-        matching_rows = df[df["Date"].str.startswith(curr_date)]
+        matching_rows = df[df["Date"].str.startswith(curr_date_str)]
 
         if not matching_rows.empty:
             indicator_value = matching_rows[indicator].values[0]

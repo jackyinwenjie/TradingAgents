@@ -1,5 +1,6 @@
 from typing import Optional
 import datetime
+import os
 import typer
 from pathlib import Path
 from functools import wraps
@@ -394,7 +395,9 @@ def update_display(layout, spinner_text=None):
 def get_user_selections():
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
-    with open("./cli/static/welcome.txt", "r") as f:
+    _cli_dir = os.path.dirname(os.path.abspath(__file__))
+    _welcome_path = os.path.join(_cli_dir, "static", "welcome.txt")
+    with open(_welcome_path, "r", encoding="utf-8") as f:
         welcome_ascii = f.read()
 
     # Create welcome box content

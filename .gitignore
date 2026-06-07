@@ -22,6 +22,7 @@ env/
 
 # Reports & Results
 reports/
+results/
 eval_results/
 
 # OS

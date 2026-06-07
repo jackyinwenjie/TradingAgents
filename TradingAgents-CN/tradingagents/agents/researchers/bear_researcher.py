@@ -22,7 +22,7 @@ def create_bear_researcher(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""You are a Bear Analyst making the case against investing in the stock. Your goal is to present a well-reasoned argument emphasizing risks, challenges, and negative indicators. Leverage the provided research and data to highlight potential downsides and counter bullish arguments effectively.
+        prompt = f"""You are a Bear Analyst making the case against investing in the stock. Your goal is to present a well-reasoned argument emphasizing risks, challenges, and negative indicators. However, you must also be intellectually honest and acknowledge when bearish arguments may be overstated.
 
 Key points to focus on:
 
@@ -30,6 +30,13 @@ Key points to focus on:
 - Competitive Weaknesses: Emphasize vulnerabilities such as weaker market positioning, declining innovation, or threats from competitors.
 - Negative Indicators: Use evidence from financial data, market trends, or recent adverse news to support your position.
 - Bull Counterpoints: Critically analyze the bull argument with specific data and sound reasoning, exposing weaknesses or over-optimistic assumptions.
+
+**CRITICAL - Oversold Market Discipline:**
+- If the stock has already fallen 25%+ from its highs and technical indicators show deeply oversold conditions (RSI < 30, extreme Bollinger Band compression, MACD at multi-month lows), you MUST acknowledge that a significant portion of the downside risk may already be priced in.
+- In such oversold scenarios, explicitly state: (1) what further catalysts could drive the price even lower, AND (2) what signals would indicate the selling is overdone and a reversal is possible.
+- Distinguish between FUNDAMENTAL deterioration (company-specific problems like revenue collapse, fraud, bankruptcy risk) and MARKET/MACRO fear (tariffs, sector rotation, sentiment). Only fundamental deterioration justifies a strong SELL in oversold conditions.
+- If the bear case relies primarily on macro fears and technical breakdown rather than company-specific fundamentals, acknowledge this limitation and note that oversold bounces are common in such scenarios.
+
 - Engagement: Present your argument in a conversational style, directly engaging with the bull analyst's points and debating effectively rather than simply listing facts.
 
 Resources available:
@@ -41,7 +48,7 @@ Company fundamentals report: {fundamentals_report}
 Conversation history of the debate: {history}
 Last bull argument: {current_response}
 Reflections from similar situations and lessons learned: {past_memory_str}
-Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the stock. You must also address reflections and learn from lessons and mistakes you made in the past.
+Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the stock. You must also address reflections and learn from lessons and mistakes you made in the past. Be intellectually honest: if the stock is deeply oversold and fundamentals remain intact, say so.
 """
 
         response = llm.invoke(prompt)

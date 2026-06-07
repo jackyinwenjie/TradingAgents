@@ -653,6 +653,13 @@ def get_YFin_data_online(
     datetime.strptime(start_date, "%Y-%m-%d")
     datetime.strptime(end_date, "%Y-%m-%d")
 
+    # Prevent future data leakage: cap end_date at today (no future data in backtests)
+    # Note: for live trading, today is the latest available data, so this is safe
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    if end_date > today_str:
+        print(f"[interface] WARNING: end_date {end_date} > today {today_str}, capping to today")
+        end_date = today_str
+
     data = None
     errors = []
 

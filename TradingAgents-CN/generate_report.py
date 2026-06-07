@@ -34,42 +34,12 @@ config["llm_provider"] = "openai"
 config["backend_url"] = "https://api.deepseek.com/v1"
 config["deep_think_llm"] = "deepseek-chat"
 config["quick_think_llm"] = "deepseek-chat"
-config["max_debate_rounds"] = 1
+config["max_debate_rounds"] = 2
+config["max_risk_discuss_rounds"] = 2
 config["online_tools"] = True
 
 # 社交媒体分析师已禁用
 analysts = ["market", "news", "fundamentals"]
-
-# ==================== 翻译工具 ====================
-def translate_to_chinese(text: str) -> str:
-    """使用 DeepSeek 将英文翻译为中文"""
-    if not text or len(text.strip()) == 0:
-        return text
-    
-    from langchain_openai import ChatOpenAI
-    llm = ChatOpenAI(
-        model="deepseek-chat",
-        base_url="https://api.deepseek.com/v1",
-    )
-    
-    prompt = f"""请将以下金融分析报告从英文翻译成中文。要求：
-1. 保持原文的专业性和准确性
-2. 金融术语翻译准确
-3. Markdown表格格式保持不变
-4. 保持原文的结构和分段
-5. 只输出翻译结果，不要加任何说明
-
-原文：
-{text}
-"""
-    
-    try:
-        result = llm.invoke(prompt).content
-        return result
-    except Exception as e:
-        print(f"翻译失败: {e}")
-        return text
-
 
 # ==================== 运行分析 ====================
 print(f"{'=' * 60}")
@@ -145,121 +115,254 @@ with open(output_dir / f"raw_data_{analysis_date}.json", "w", encoding="utf-8") 
 
 print(f"\n原始数据已保存至: {output_dir / f'raw_data_{analysis_date}.json'}")
 
-# ==================== 翻译并生成中文报告 ====================
-print("\n正在翻译为中文...")
+# ==================== 总结提炼工具 ====================
+from langchain_openai import ChatOpenAI
 
-translated = {}
+summarize_llm = ChatOpenAI(
+    model="deepseek-chat",
+    base_url="https://api.deepseek.com/v1",
+)
 
-sections = [
-    ("市场技术分析报告", "market", reports.get("market", "")),
-    ("全球新闻/宏观分析报告", "news", reports.get("news", "")),
-    ("基本面分析报告", "fundamentals", reports.get("fundamentals", "")),
-    ("多头研究员论点（投资辩论）", "bull_history", bull_history),
-    ("空头研究员论点（投资辩论）", "bear_history", bear_history),
-    ("投资辩论裁判裁决", "invest_judge", invest_judge),
-    ("交易员交易计划", "trader_plan", trader_plan),
-    ("激进风险分析师论点", "risky_history", risky_history),
-    ("保守风险分析师论点", "safe_history", safe_history),
-    ("中性风险分析师论点", "neutral_history", neutral_history),
-    ("风险管理裁判最终裁决", "final_decision", final_decision),
-]
+def summarize_section(section_name: str, raw_text: str, context: str = "") -> str:
+    """使用 LLM 将原始英文分析内容总结提炼为精炼的中文摘要"""
+    if not raw_text or len(raw_text.strip()) == 0:
+        return "（无数据）"
+    
+    prompt = f"""你是一位专业的金融分析师，请将以下"{section_name}"的原始英文分析内容总结为精炼的中文摘要。
 
-for section_name, key, content in sections:
-    if content and len(content.strip()) > 0:
-        print(f"  翻译: {section_name} ({len(content)} 字符)...")
-        translated[key] = translate_to_chinese(content)
+要求：
+1. 提炼核心观点和关键数据，不要逐字翻译
+2. 保留重要的数字、指标数值、价格区间等定量信息
+3. 使用清晰的中文金融术语
+4. 结构清晰，分点列出关键结论（3-6个要点）
+5. 控制在500字以内
+6. 只输出总结内容，不要加"以下是总结"之类的开头
+
+{context}
+
+原始内容：
+{raw_text[:8000]}
+"""
+    
+    try:
+        result = summarize_llm.invoke(prompt).content
+        return result
+    except Exception as e:
+        print(f"  总结失败: {e}，降级为简单截取")
+        # 降级：截取前2000字符
+        return f"[总结失败，以下是原始内容前段]\n\n{raw_text[:2000]}..."
+
+print("\n正在生成中文分析报告（总结提炼模式）...")
+
+# ==================== 第一部分：三大分析师总结 ====================
+print("  [1/6] 总结三大分析师报告...")
+
+analysts_raw = {
+    "market": reports.get("market", ""),
+    "news": reports.get("news", ""),
+    "fundamentals": reports.get("fundamentals", ""),
+}
+
+analysts_summary = {}
+for key, raw in analysts_raw.items():
+    name_map = {"market": "市场技术分析", "news": "全球新闻/宏观分析", "fundamentals": "基本面分析"}
+    if raw and len(raw.strip()) > 0:
+        analysts_summary[key] = summarize_section(name_map[key], raw)
+        print(f"    市场/新闻/基本面 总结完成 ({key})")
     else:
-        translated[key] = "(无数据)"
+        analysts_summary[key] = "（无数据）"
 
-# ==================== 生成中文报告文件 ====================
+# 生成三大分析师综合总结
+three_analysts_combined = f"""
+市场技术分析要点：
+{analysts_summary.get('market', '')}
+
+全球新闻/宏观分析要点：
+{analysts_summary.get('news', '')}
+
+基本面分析要点：
+{analysts_summary.get('fundamentals', '')}
+"""
+
+part1_summary = summarize_section(
+    "三大分析师综合总结",
+    three_analysts_combined,
+    "请综合三位分析师的观点，给出一个整体性的总结摘要。"
+)
+
+# ==================== 第二部分：多空辩论总结 ====================
+print("  [2/6] 总结多空辩论...")
+
+bull_summary = summarize_section("多头研究员观点", bull_history) if bull_history else "（无数据）"
+bear_summary = summarize_section("空头研究员观点", bear_history) if bear_history else "（无数据）"
+
+debate_combined = f"""
+多头研究员观点：
+{bull_history[:5000] if bull_history else ''}
+
+空头研究员观点：
+{bear_history[:5000] if bear_history else ''}
+"""
+
+part2_summary = summarize_section(
+    "多空辩论关键分歧点与结论",
+    debate_combined,
+    "请总结多头和空头辩论的核心分歧、各自最强论据，以及辩论的关键结论。"
+)
+
+# ==================== 第三部分：研究经理初步判定 ====================
+print("  [3/6] 总结研究经理判定...")
+
+part3_summary = summarize_section(
+    "研究经理（投资辩论裁判）初步判定",
+    invest_judge,
+    "请提炼研究经理的核心判断、推荐方向和主要理由。"
+) if invest_judge else "（无数据）"
+
+# ==================== 第四部分：交易员初步交易计划 ====================
+print("  [4/6] 总结交易员计划...")
+
+part4_summary = summarize_section(
+    "交易员初步交易计划",
+    trader_plan,
+    "请提炼交易计划的核心操作建议、关键价位和执行策略。"
+) if trader_plan else "（无数据）"
+
+# ==================== 第五部分：风控三方辩论总结 ====================
+print("  [5/6] 总结风控三方辩论...")
+
+risky_summary = summarize_section("激进风控观点", risky_history) if risky_history else "（无数据）"
+safe_summary = summarize_section("保守风控观点", safe_history) if safe_history else "（无数据）"
+neutral_summary = summarize_section("中性风控观点", neutral_history) if neutral_history else "（无数据）"
+
+risk_combined = f"""
+激进风控观点：
+{risky_history[:4000] if risky_history else ''}
+
+保守风控观点：
+{safe_history[:4000] if safe_history else ''}
+
+中性风控观点：
+{neutral_history[:4000] if neutral_history else ''}
+"""
+
+part5_summary = summarize_section(
+    "风控三方辩论核心分歧",
+    risk_combined,
+    "请总结激进、保守、中性三方风控分析师的核心观点分歧、各自最有力的论据，以及辩论中体现的关键权衡。"
+)
+
+# ==================== 第六部分：风控裁判最终决定 ====================
+print("  [6/6] 总结最终决定...")
+
+part6_summary = summarize_section(
+    "风险管理裁判最终决定",
+    final_decision,
+    "请提炼最终决策、核心理由、执行建议和风险提示。"
+) if final_decision else "（无数据）"
+
+# ==================== 生成结构化报告 ====================
 report_lines = []
-report_lines.append("# TradingAgents 股票分析报告\n")
-report_lines.append(f"**股票代码**: {ticker}  ")
-report_lines.append(f"**分析日期**: {analysis_date}  ")
-report_lines.append(f"**生成时间**: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ")
-report_lines.append(f"**最终决策**: **{decision}**\n")
-report_lines.append("---\n")
-
-# ===== 第一部分：三个分析师报告 =====
-report_lines.append("## 第一部分：三大分析师研究报告\n")
-
-report_lines.append("### 1.1 市场技术分析师\n")
-report_lines.append("> 负责分析价格趋势、技术指标（MACD/RSI/布林带/均线等），给出技术面判断\n")
-report_lines.append(translated.get("market", ""))
-report_lines.append("\n---\n")
-
-report_lines.append("### 1.2 全球新闻/宏观分析师\n")
-report_lines.append("> 负责分析全球宏观新闻、行业动态、政策变化\n")
-report_lines.append(translated.get("news", ""))
-report_lines.append("\n---\n")
-
-report_lines.append("### 1.3 基本面分析师\n")
-report_lines.append("> 负责分析财务报表、内部人交易、公司基本面数据\n")
-report_lines.append(translated.get("fundamentals", ""))
-report_lines.append("\n---\n")
-
-# ===== 第二部分：投资辩论 =====
-report_lines.append("## 第二部分：投资辩论（多头 vs 空头）\n")
-report_lines.append("> 多头和空头研究员基于四份分析报告进行辩论，最后由投资裁判做出裁决\n")
-
-report_lines.append("### 2.1 多头研究员论点\n")
-report_lines.append("> 强调增长潜力、竞争优势、正面指标，反驳空头观点\n")
-report_lines.append(translated.get("bull_history", ""))
+report_lines.append("# 📊 TradingAgents 股票分析报告\n")
+report_lines.append(f"| 项目 | 内容 |")
+report_lines.append(f"|------|------|")
+report_lines.append(f"| **股票代码** | {ticker} |")
+report_lines.append(f"| **分析日期** | {analysis_date} |")
+report_lines.append(f"| **生成时间** | {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} |")
+report_lines.append(f"| **最终决策** | **{decision}** |")
+report_lines.append("")
+report_lines.append("> 分析流程：三大分析师 → 多空辩论 → 研究经理判定 → 交易员计划 → 风控辩论 → 最终决策")
+report_lines.append("")
+report_lines.append("---")
 report_lines.append("")
 
-report_lines.append("### 2.2 空头研究员论点\n")
-report_lines.append("> 强调风险挑战、竞争劣势、负面指标，反驳多头观点\n")
-report_lines.append(translated.get("bear_history", ""))
+# ===== 第一部分 =====
+report_lines.append("## 一、三大分析师研究总结\n")
+report_lines.append(part1_summary)
+report_lines.append("")
+report_lines.append("---")
 report_lines.append("")
 
-report_lines.append("### 2.3 投资辩论裁判裁决\n")
-report_lines.append("> 综合双方论点，做出买入/卖出/持有的投资建议\n")
-report_lines.append(translated.get("invest_judge", ""))
-report_lines.append("\n---\n")
-
-# ===== 第三部分：交易员 =====
-report_lines.append("## 第三部分：交易员交易计划\n")
-report_lines.append("> 基于投资辩论结果，制定具体交易计划\n")
-report_lines.append(translated.get("trader_plan", ""))
-report_lines.append("\n---\n")
-
-# ===== 第四部分：风险辩论 =====
-report_lines.append("## 第四部分：风险辩论（激进 vs 保守 vs 中性）\n")
-report_lines.append("> 三位风险分析师就交易员的计划进行辩论，最终由风险裁判做出最终决策\n")
-
-report_lines.append("### 4.1 激进风险分析师\n")
-report_lines.append("> 主张高风险高回报，强调机会和增长潜力\n")
-report_lines.append(translated.get("risky_history", ""))
+# ===== 第二部分 =====
+report_lines.append("## 二、多空研究员辩论总结\n")
+report_lines.append("### 多头研究员核心观点\n")
+report_lines.append(bull_summary)
+report_lines.append("")
+report_lines.append("### 空头研究员核心观点\n")
+report_lines.append(bear_summary)
+report_lines.append("")
+report_lines.append("### 辩论关键分歧点与结论\n")
+report_lines.append(part2_summary)
+report_lines.append("")
+report_lines.append("---")
 report_lines.append("")
 
-report_lines.append("### 4.2 保守风险分析师\n")
-report_lines.append("> 主张资产保护、降低波动，强调风险和安全性\n")
-report_lines.append(translated.get("safe_history", ""))
+# ===== 第三部分 =====
+report_lines.append("## 三、研究经理初步判定结论\n")
+report_lines.append(part3_summary)
+report_lines.append("")
+report_lines.append("---")
 report_lines.append("")
 
-report_lines.append("### 4.3 中性风险分析师\n")
-report_lines.append("> 主张平衡策略，综合考量风险与回报\n")
-report_lines.append(translated.get("neutral_history", ""))
+# ===== 第四部分 =====
+report_lines.append("## 四、交易员初步交易计划\n")
+report_lines.append(part4_summary)
+report_lines.append("")
+report_lines.append("---")
 report_lines.append("")
 
-report_lines.append("### 4.4 风险管理裁判最终裁决\n")
-report_lines.append("> 综合三方观点，做出最终的买入/卖出/持有决策\n")
-report_lines.append(translated.get("final_decision", ""))
-report_lines.append("\n---\n")
+# ===== 第五部分 =====
+report_lines.append("## 五、风控三方辩论观点总结\n")
+report_lines.append("### 激进风控观点\n")
+report_lines.append(risky_summary)
+report_lines.append("")
+report_lines.append("### 保守风控观点\n")
+report_lines.append(safe_summary)
+report_lines.append("")
+report_lines.append("### 中性风控观点\n")
+report_lines.append(neutral_summary)
+report_lines.append("")
+report_lines.append("### 三方辩论核心分歧\n")
+report_lines.append(part5_summary)
+report_lines.append("")
+report_lines.append("---")
+report_lines.append("")
 
-# ===== 总结 =====
-report_lines.append("## 总结\n")
-report_lines.append(f"**最终交易决策**: **{decision}**\n")
-report_lines.append(f"**分析流程**: 市场分析 → 新闻分析 → 基本面分析 → 投资辩论(多头vs空头) → 交易员计划 → 风险辩论(激进vs保守vs中性) → 最终决策\n")
+# ===== 第六部分 =====
+report_lines.append("## 六、风险管理裁判最终决定\n")
+report_lines.append(part6_summary)
+report_lines.append("")
+report_lines.append("---")
+report_lines.append("")
+
+# ===== 决策总览 =====
+report_lines.append("## 📌 决策总览\n")
+report_lines.append(f"> **最终交易决策**: **{decision}**\n")
+report_lines.append("")
+report_lines.append("| 阶段 | 角色 | 倾向 |")
+report_lines.append("|------|------|------|")
+report_lines.append(f"| 投资辩论裁判 | 研究经理 | 见第三部分 |")
+report_lines.append(f"| 交易计划 | 交易员 | 见第四部分 |")
+report_lines.append(f"| 最终裁决 | 风险管理裁判 | **{decision}** |")
+report_lines.append("")
+report_lines.append("---")
+report_lines.append("")
+report_lines.append("*本报告由 TradingAgents 多智能体分析系统自动生成，仅供参考，不构成投资建议。*")
 
 # 写入文件
 report_file = output_dir / f"analysis_report_{analysis_date}.md"
 with open(report_file, "w", encoding="utf-8") as f:
     f.write("\n".join(report_lines))
 
+# 同时保存详细原始数据（含完整翻译）
+print("\n保存详细原始数据...")
+raw_data_file = output_dir / f"raw_data_{analysis_date}.json"
+with open(raw_data_file, "r", encoding="utf-8") as f:
+    pass  # 已在前面保存
+
 print(f"\n{'=' * 60}")
 print(f"  报告生成完成！")
 print(f"{'=' * 60}")
-print(f"\n原始数据: {output_dir / f'raw_data_{analysis_date}.json'}")
-print(f"中文报告: {report_file}")
+print(f"\n结构化报告: {report_file}")
+print(f"原始数据: {output_dir / f'raw_data_{analysis_date}.json'}")
 print(f"最终决策: {decision}")
