@@ -424,7 +424,7 @@ with open(report_file, "w", encoding="utf-8") as f:
     f.write("\n".join(report_lines))
 
 print(f"\n{'=' * 60}")
-print(f"  ✅ 分析已完成！")
+print(f"  ✅ 分析已完成！--ywj")
 print(f"{'=' * 60}")
 print(f"\n📄 分析报告: {report_file.resolve()}")
 print(f"📦 原始数据: {(output_dir / f'raw_data_{analysis_date}.json').resolve()}")
