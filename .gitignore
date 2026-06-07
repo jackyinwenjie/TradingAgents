@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Reports & Results
+reports/
+eval_results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv lock
+uv.lock
+
+# test files
+test_*.py
